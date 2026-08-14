@@ -15,8 +15,7 @@ real failover time.
 What's true right now: the architecture is real and deployable, the
 Terraform is modular and follows AWS best practices for warm standby, and
 `scripts/test_failover.sh` is a real test you can run once it's deployed.
-What's not true yet: any specific failover time, cost figure, or "it
-works" claim — those only become honest once you've run it.
+
 
 ## Architecture
 
