@@ -10,10 +10,7 @@ failover routing, provisioned entirely through modular Terraform.
 **This is complete, correct Terraform that has not yet been applied to a
 real AWS account.** I wrote and hand-reviewed every module, but I have not
 run `terraform apply`, stood up the actual infrastructure, or measured a
-real failover time. Do not represent this as "tested" or "deployed" until
-you've actually run it — the whole point of doing this honestly is that a
-claimed-but-unverified failover time is exactly the kind of thing that
-falls apart under interview questioning.
+real failover time. 
 
 What's true right now: the architecture is real and deployable, the
 Terraform is modular and follows AWS best practices for warm standby, and
