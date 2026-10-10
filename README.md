@@ -1,112 +1,130 @@
+# AWS Multi-Region Disaster Recovery
 
-# AWS Multi-Region Disaster Recovery Architecture
+A Terraform-defined warm-standby disaster recovery design across two AWS regions (us-east-1 primary, us-west-2 standby), using RDS cross-region read replicas and Route 53 failover routing. The failover behaviour was evaluated in a **local Docker and Lambda simulation**, not on AWS.
 
-A Terraform-defined warm-standby disaster recovery design across two AWS regions, using RDS cross-region read replicas and Route 53 health-checked failover routing.
+## Evidence
+
+- **Simulation results report (PDF):** [`docs/AWS_dr_failover_results.pdf`](docs/AWS_dr_failover_results.pdf) `<FILL: confirm path>`
+- **Demo video:** `<FILL: link>`
 
 ## Deployment status
 
 | Item | Status |
 |---|---|
-| Terraform code written | Yes |
-| `terraform apply` run against a live AWS account | **No** |
+| Deployed to AWS | **No** |
 | AWS resources created | **None** |
-| `terraform validate` / `terraform plan` run | `<FILL: Yes/No, and against which account or mock>` |
+| `terraform apply` run | **No** |
+| `terraform validate` / `terraform plan` run | `<FILL: Yes/No>` |
 | Failover tested on real AWS infrastructure | **No** |
 
-**This project has not been deployed to AWS.** It was not applied because of cost. Everything described below as "tested" refers to a local simulation, not to AWS services. Behaviour on real AWS, including timings, is unverified.
-
----
+The Terraform code is written but has never been applied to an AWS account (cost). Every result in this README comes from a local simulation. No figure here is an AWS measurement.
 
 ## Architecture
 
 | Terraform module | Purpose |
 |---|---|
-| `network` | VPC and networking in the primary and standby regions |
+| `network` | VPC and networking in both regions |
 | `compute` | Application tier in both regions (standby sized for warm standby) |
 | `database` | RDS primary plus cross-region read replica |
 | `dns-failover` | Route 53 health check and failover routing records |
 
-**Strategy:** warm standby. The standby region runs a scaled-down copy of the stack with a continuously replicated database. On failure, the replica is promoted and traffic is routed to the standby.
-
-Regions: `<FILL: primary>` and `<FILL: standby>`.
+**Strategy:** warm standby. The standby region runs a scaled-down stack with a continuously replicated database. On failure, the replica is promoted and traffic is routed to the standby.
 
 ---
 
-## Failover evaluation (local / simulated)
+## Failover evaluation (local Docker and Lambda simulation)
 
-> **This evaluation was run locally. It is a simulation of the failover logic, not a measurement of AWS.** The RTO and RPO values below must not be quoted as AWS performance.
+> **This is a simulation.** The primary and standby "regions", the database replication, the health check, the DNS switch and the promotion were all modelled locally with Docker containers and Lambda. The timings describe the simulated failover sequence, not the speed of Route 53, RDS or any AWS service. One run (n = 1).
 
-### Environment
+### Simulation environment
 
 | Item | Value |
 |---|---|
 | Host | `<FILL: machine, OS>` |
-| Simulation tooling | `<FILL: Docker Compose, LocalStack, scripts, etc.>` |
-| "Primary" database | `<FILL: e.g. Postgres container>` |
-| "Replica" database | `<FILL: e.g. Postgres container with streaming replication>` |
-| Replication mode | `<FILL: sync / async, and any artificial lag injected>` |
-| "Health check" and "DNS" stand-in | `<FILL: e.g. script polling /health, proxy that switches upstream>` |
-| Failure injected | `<FILL: e.g. docker stop primary-app and primary-db>` |
-| Number of runs | `<FILL>` |
+| Runtime | Docker (`<FILL: Docker version, Compose file>`) |
+| Lambda | `<FILL: what the Lambda function does and how it was run locally, e.g. Lambda runtime image or SAM local>` |
+| Simulated primary / standby | `<FILL: containers used for each>` |
+| Simulated database replication | `<FILL: mechanism, e.g. Postgres streaming replication between two containers>` |
+| Simulated health check | `<FILL: what polls what, interval and failure threshold>` |
+| Simulated DNS switch | `<FILL: mechanism, TTL modelled as 60 s>` |
+| Failure injection | `<FILL: what was stopped or blocked in the simulation>` |
+| Write load | `<FILL: tool, write rate>` |
+| Replication lag | <100 ms (`<FILL: how it was measured>`) |
+| Runs | 1 |
+| Date of run | `<FILL>` |
 
-### Definitions
+### Which delays were measured and which were configured
 
-- **RTO (recovery time objective, measured):** time from failure injection (`t0`) until the first successful request served by the standby (`t1`). `RTO = t1 - t0`.
-- **RPO (recovery point objective, measured):** the amount of acknowledged data lost at failover. Measured as the count of writes acknowledged by the primary that are missing on the promoted replica, and the time span they cover.
+This matters for how the RTO should be read. Fill in each row:
 
-### Measurement procedure
+| Phase | Duration in run | Produced by |
+|---|---|---|
+| Health check detection | 15 s | `<FILL: emerged from interval x threshold in the simulation / configured delay>` |
+| DNS update / client cache expiry | 15 s | `<FILL: emerged from modelled TTL / configured delay>` |
+| Waiting for the promotion command | 15 s | `<FILL: manual delay / script delay>` |
+| Replica promotion | 77 s | `<FILL: real promotion time in the containers / injected delay modelled on RDS>` |
+| Standby app confirms DB connectivity | 13 s | `<FILL>` |
 
-1. Start a client loop that sends a request every `<FILL: interval>` and logs a timestamp, HTTP status and which site answered.
-2. Start a writer loop that inserts rows with a sequence number and wall-clock timestamp, and logs each sequence number only after the primary acknowledges it.
-3. Record `t0` and inject the failure.
-4. Promote the replica (`<FILL: how: command or script>`) and switch traffic.
-5. Record `t1` as the timestamp of the first successful response from the standby.
-6. After promotion, compare the writer log with the promoted database:
-   - `lost_writes = acknowledged sequence numbers not present on the replica`
-   - `RPO window = timestamp of last acknowledged write - timestamp of last surviving write`
-7. Repeat for `<FILL>` runs and report min / median / max, not a single number.
+If a phase is an injected or modelled delay, the RTO is partly an input to the simulation, not an observation. Say so in this table.
 
-Scripts: `<FILL: path to scripts, committed to repo>`. Raw logs: `<FILL: path>`.
+### Timeline (UTC, simulated)
 
-### Results (simulated)
+| Event | Time | Offset from failure |
+|---|---|---|
+| Simulation started | 14:32:10 | |
+| Write load started | 14:33:45 | |
+| **Failure injected** | **14:38:20** | **0 s** |
+| Simulated health check flips unhealthy | 14:38:35 | +15 s |
+| Simulated DNS update, clients retry against standby | 14:38:50 | +30 s |
+| Replica promotion issued | 14:39:05 | +45 s |
+| Replica promotion complete | 14:40:22 | +122 s |
+| Standby app confirms DB connectivity | 14:40:35 | +135 s |
+| Teardown complete | 14:41:50 | |
 
-| Run | RTO (s) | Lost writes | RPO window (s) |
-|---|---|---|---|
-| 1 | `<FILL>` | `<FILL>` | `<FILL>` |
-| 2 | `<FILL>` | `<FILL>` | `<FILL>` |
-| 3 | `<FILL>` | `<FILL>` | `<FILL>` |
-| **Median** | `<FILL>` | `<FILL>` | `<FILL>` |
+### RTO
 
-### What these numbers do and do not show
+**Definition:** time from failure injection (`t0` = 14:38:20) to the standby application confirming database connectivity (`t1` = 14:40:35).
 
-They show that the failover sequence (detect, promote, redirect) works in the simulated setup and how long that sequence takes there.
+**Result: 135 seconds in the simulation** (one run): 15 s detection + 15 s DNS + 15 s waiting for promotion + 77 s promotion + 13 s app recovery.
 
-They do **not** include delays that exist on real AWS and were not measured:
+### RPO
 
-- Route 53 health check detection time (check interval multiplied by failure threshold)
-- DNS TTL and client resolver caching
-- RDS cross-region replica promotion time
-- Real cross-region replication lag, which determines true RPO for an asynchronous replica
+**Definition:** the gap between failure injection and the last write present on the promoted replica, plus a check for acknowledged writes missing after promotion.
 
-A real RTO would be at least the sum of these plus application warm-up time. Treat the simulated figures as a lower bound on the logic, not a prediction for AWS.
+**Result:** the last write on the promoted replica was at 14:38:19, 1 s before the failure, and no write was found missing (one run).
+
+This reflects the simulated replication setup and the write interval of the load generator. Real RDS cross-region read replicas replicate asynchronously, so a real RPO can be higher and depends on actual replication lag.
+
+### What this does and does not show
+
+- It shows the failover orchestration (detect, promote, redirect, verify) works end to end in the simulation.
+- It does not give AWS timings. A real failover would additionally include Route 53 health check detection (Route 53 supports 10 s or 30 s check intervals), DNS TTL and resolver caching, actual RDS replica promotion time, and real cross-region replication lag.
+- It is a single run, with a manual promotion step, a small data set and no real regional outage.
 
 ---
 
-## Limitations
+## Roadmap (not implemented)
 
-- Not deployed; no AWS-measured RTO or RPO exists.
-- Simulated replication lag is `<FILL: injected value or none>`, so the RPO result reflects that setting only.
-- Cost, IAM and cross-region data transfer behaviour are untested.
-- `<FILL: other gaps>`
+- Apply the Terraform to a real account for a short, torn-down test run and measure real RTO and RPO.
+- Automate promotion (for example an EventBridge or SNS-triggered Lambda) to remove the manual delay.
+- Repeat the simulation and report min / median / max, not a single run.
+- Add fault-injection cases (network partition, instance crash, AZ outage).
 
-## Using the Terraform
+## Repository layout and setup
+
+`<FILL: real tree and the commands that work from a fresh clone, including how to run the Docker and Lambda simulation>`
 
 ```bash
-cd terraform
+cd <FILL: terraform directory>
 terraform init
 terraform validate
-# terraform plan   # requires AWS credentials; creates nothing
-# terraform apply  # NOT run for this project
+# terraform apply is NOT run for this project; it would create billable resources in two regions
 ```
 
-Applying this configuration to a real account will create billable resources, including an RDS instance and replica in two regions.
+
+
+
+
+
+
+
