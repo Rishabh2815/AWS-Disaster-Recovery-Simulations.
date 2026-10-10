@@ -5,7 +5,6 @@ A Terraform-defined warm-standby disaster recovery design across two AWS regions
 ## Evidence
 
 - **Simulation results report (PDF):** [`docs/AWS_dr_failover_results.pdf`](docs/AWS_dr_failover_results.pdf) `<FILL: confirm path>`
-- **Demo video:** `<FILL: link>`
 
 ## Deployment status
 
