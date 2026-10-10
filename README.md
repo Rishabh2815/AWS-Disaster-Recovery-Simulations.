@@ -1,126 +1,112 @@
-# AWS-Disaster-Recovery-Simulations.
 
-# AWS Disaster Recovery Simulation
+# AWS Multi-Region Disaster Recovery Architecture
 
-A two-region warm-standby architecture on AWS with automated Route 53
-failover routing, provisioned entirely through modular Terraform.
+A Terraform-defined warm-standby disaster recovery design across two AWS regions, using RDS cross-region read replicas and Route 53 health-checked failover routing.
 
-## Status — read this first
+## Deployment status
 
-**This is complete, correct Terraform that has not yet been applied to a
-real AWS account.** I wrote and hand-reviewed every module, but I have not
-run `terraform apply`, stood up the actual infrastructure, or measured a
-real failover time. 
+| Item | Status |
+|---|---|
+| Terraform code written | Yes |
+| `terraform apply` run against a live AWS account | **No** |
+| AWS resources created | **None** |
+| `terraform validate` / `terraform plan` run | `<FILL: Yes/No, and against which account or mock>` |
+| Failover tested on real AWS infrastructure | **No** |
 
-What's true right now: the architecture is real and deployable, the
-Terraform is modular and follows AWS best practices for warm standby, and
-`scripts/test_failover.sh` is a real test you can run once it's deployed.
+**This project has not been deployed to AWS.** It was not applied because of cost. Everything described below as "tested" refers to a local simulation, not to AWS services. Behaviour on real AWS, including timings, is unverified.
 
+---
 
 ## Architecture
 
-```
-                    Route 53 (health-checked failover routing)
-                         │
-            ┌────────────┴────────────┐
-            │                         │
-      PRIMARY (us-east-1)      SECONDARY (us-west-2)
-            │                         │
-    ┌───────┴───────┐         ┌───────┴───────┐
-    │  ALB + ASG    │         │  ALB + ASG     │  ← warm: min 1 instance
-    │  (app tier)   │         │  (app tier)    │     running, not cold
-    └───────┬───────┘         └───────┬───────┘
-            │                         │
-    ┌───────┴───────┐         ┌───────┴───────┐
-    │  RDS primary  │────────▶│  RDS read      │
-    │               │ replic. │  replica       │
-    └───────────────┘         └───────────────┘
-```
+| Terraform module | Purpose |
+|---|---|
+| `network` | VPC and networking in the primary and standby regions |
+| `compute` | Application tier in both regions (standby sized for warm standby) |
+| `database` | RDS primary plus cross-region read replica |
+| `dns-failover` | Route 53 health check and failover routing records |
 
-Route 53 continuously health-checks the primary region's load balancer. If
-it fails health checks, Route 53 stops resolving the DNS record to the
-primary and starts resolving to the secondary — automatically, with no
-manual DNS change required. The secondary region runs a small standing
-fleet (not zero instances) and a continuously-replicating RDS read replica,
-so failover means "promote and redirect traffic," not "provision from
-scratch," which is what makes this a *warm* standby rather than cold.
+**Strategy:** warm standby. The standby region runs a scaled-down copy of the stack with a continuously replicated database. On failure, the replica is promoted and traffic is routed to the standby.
 
-## Why warm standby (and not pilot light or hot/hot)
+Regions: `<FILL: primary>` and `<FILL: standby>`.
 
-- **Cold/pilot light** — cheaper, but recovery means booting infrastructure
-  from scratch, which costs minutes to tens of minutes and risks
-  configuration drift between "what's defined" and "what actually boots."
-- **Hot/hot (active-active)** — fastest failover, but doubles steady-state
-  cost and requires solving multi-region write conflicts, which is a much
-  bigger problem than this project needs to solve to make the point.
-- **Warm standby** — a small always-on fleet plus a continuously replicating
-  database gets you fast, low-drama failover without full active-active
-  cost or complexity. It's the right trade-off for a portfolio project
-  demonstrating DR concepts without needing production-scale traffic.
+---
 
-## Repo structure
+## Failover evaluation (local / simulated)
 
-```
-aws-dr-sim/
-  modules/
-    network/         VPC, public/private subnets, NAT, routing — per region
-    compute/          ALB + Auto Scaling Group + launch template
-    database/         RDS primary (or cross-region read replica)
-    dns-failover/     Route 53 health check + PRIMARY/SECONDARY failover records
-  scripts/
-    test_failover.sh  Scales primary ASG to 0 and times DNS failover
-  main.tf              Wires two regions together via provider aliases
-  variables.tf
-  outputs.tf
-  providers.tf
-  terraform.tfvars.example
-```
+> **This evaluation was run locally. It is a simulation of the failover logic, not a measurement of AWS.** The RTO and RPO values below must not be quoted as AWS performance.
 
-## Deploying it
+### Environment
 
-Prerequisites: an AWS account, Terraform ≥1.5, an existing Route 53 hosted
-zone for a domain you control (failover routing needs a real zone).
+| Item | Value |
+|---|---|
+| Host | `<FILL: machine, OS>` |
+| Simulation tooling | `<FILL: Docker Compose, LocalStack, scripts, etc.>` |
+| "Primary" database | `<FILL: e.g. Postgres container>` |
+| "Replica" database | `<FILL: e.g. Postgres container with streaming replication>` |
+| Replication mode | `<FILL: sync / async, and any artificial lag injected>` |
+| "Health check" and "DNS" stand-in | `<FILL: e.g. script polling /health, proxy that switches upstream>` |
+| Failure injected | `<FILL: e.g. docker stop primary-app and primary-db>` |
+| Number of runs | `<FILL>` |
+
+### Definitions
+
+- **RTO (recovery time objective, measured):** time from failure injection (`t0`) until the first successful request served by the standby (`t1`). `RTO = t1 - t0`.
+- **RPO (recovery point objective, measured):** the amount of acknowledged data lost at failover. Measured as the count of writes acknowledged by the primary that are missing on the promoted replica, and the time span they cover.
+
+### Measurement procedure
+
+1. Start a client loop that sends a request every `<FILL: interval>` and logs a timestamp, HTTP status and which site answered.
+2. Start a writer loop that inserts rows with a sequence number and wall-clock timestamp, and logs each sequence number only after the primary acknowledges it.
+3. Record `t0` and inject the failure.
+4. Promote the replica (`<FILL: how: command or script>`) and switch traffic.
+5. Record `t1` as the timestamp of the first successful response from the standby.
+6. After promotion, compare the writer log with the promoted database:
+   - `lost_writes = acknowledged sequence numbers not present on the replica`
+   - `RPO window = timestamp of last acknowledged write - timestamp of last surviving write`
+7. Repeat for `<FILL>` runs and report min / median / max, not a single number.
+
+Scripts: `<FILL: path to scripts, committed to repo>`. Raw logs: `<FILL: path>`.
+
+### Results (simulated)
+
+| Run | RTO (s) | Lost writes | RPO window (s) |
+|---|---|---|---|
+| 1 | `<FILL>` | `<FILL>` | `<FILL>` |
+| 2 | `<FILL>` | `<FILL>` | `<FILL>` |
+| 3 | `<FILL>` | `<FILL>` | `<FILL>` |
+| **Median** | `<FILL>` | `<FILL>` | `<FILL>` |
+
+### What these numbers do and do not show
+
+They show that the failover sequence (detect, promote, redirect) works in the simulated setup and how long that sequence takes there.
+
+They do **not** include delays that exist on real AWS and were not measured:
+
+- Route 53 health check detection time (check interval multiplied by failure threshold)
+- DNS TTL and client resolver caching
+- RDS cross-region replica promotion time
+- Real cross-region replication lag, which determines true RPO for an asynchronous replica
+
+A real RTO would be at least the sum of these plus application warm-up time. Treat the simulated figures as a lower bound on the logic, not a prediction for AWS.
+
+---
+
+## Limitations
+
+- Not deployed; no AWS-measured RTO or RPO exists.
+- Simulated replication lag is `<FILL: injected value or none>`, so the RPO result reflects that setting only.
+- Cost, IAM and cross-region data transfer behaviour are untested.
+- `<FILL: other gaps>`
+
+## Using the Terraform
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars with your route53_zone_id and dns_record_name
-
-export TF_VAR_db_password="something-strong-not-committed"
-
+cd terraform
 terraform init
 terraform validate
-terraform plan     # review carefully — this creates billable resources
-terraform apply
+# terraform plan   # requires AWS credentials; creates nothing
+# terraform apply  # NOT run for this project
 ```
 
-**Cost warning:** this creates two NAT gateways, two ALBs, EC2 instances,
-and two RDS instances (one primary, one replica) — this is not free-tier
-and will accrue real cost per hour it's running. Destroy it when you're
-done testing:
-
-```bash
-terraform destroy
-```
-
-## Testing failover
-
-Once deployed, get your ASG name and DNS record, then:
-
-```bash
-./scripts/test_failover.sh app.yourdomain.com primary-asg <secondary-alb-ip-or-cname>
-```
-
-This scales the primary ASG to zero (simulating an outage), polls DNS
-until it resolves to the secondary region, and prints the elapsed time.
-**This elapsed time — not an estimate — is the number that belongs on a
-resume**, once you've actually run it.
-
-## Known gaps / what I'd add with more time
-
-- No automated RDS promotion — the read replica needs to be manually
-  promoted to a standalone writable primary during a real failover; this
-  isn't scripted yet.
-- No application-level connection string handling for the failover case
-  (the app tier would need to know to point at the promoted replica).
-- No cost monitoring/alerting on the standing secondary fleet.
-- Terraform hasn't been run against a real account yet — see Status above.
+Applying this configuration to a real account will create billable resources, including an RDS instance and replica in two regions.
