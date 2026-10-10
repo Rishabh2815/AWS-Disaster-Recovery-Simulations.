@@ -35,23 +35,6 @@ The Terraform code is written but has never been applied to an AWS account (cost
 
 > **This is a simulation.** The primary and standby "regions", the database replication, the health check, the DNS switch and the promotion were all modelled locally with Docker containers and Lambda. The timings describe the simulated failover sequence, not the speed of Route 53, RDS or any AWS service. One run (n = 1).
 
-### Simulation environment
-
-| Item | Value |
-|---|---|
-| Host | `<FILL: machine, OS>` |
-| Runtime | Docker (`<FILL: Docker version, Compose file>`) |
-| Lambda | `<FILL: what the Lambda function does and how it was run locally, e.g. Lambda runtime image or SAM local>` |
-| Simulated primary / standby | `<FILL: containers used for each>` |
-| Simulated database replication | `<FILL: mechanism, e.g. Postgres streaming replication between two containers>` |
-| Simulated health check | `<FILL: what polls what, interval and failure threshold>` |
-| Simulated DNS switch | `<FILL: mechanism, TTL modelled as 60 s>` |
-| Failure injection | `<FILL: what was stopped or blocked in the simulation>` |
-| Write load | `<FILL: tool, write rate>` |
-| Replication lag | <100 ms (`<FILL: how it was measured>`) |
-| Runs | 1 |
-| Date of run | `<FILL>` |
-
 ### Which delays were measured and which were configured
 
 This matters for how the RTO should be read. Fill in each row:
