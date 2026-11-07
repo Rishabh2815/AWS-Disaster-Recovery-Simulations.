@@ -1,0 +1,13 @@
+# Terraform state and local configuration
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+
+# Local artifacts
+.DS_Store
+Thumbs.db

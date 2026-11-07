@@ -1,14 +1,14 @@
 # ---------- PRIMARY REGION ----------
 
 module "network_primary" {
-  source      = "./modules/network"
+  source      = "../modules/network"
   providers   = { aws = aws.primary }
   region      = var.primary_region
   name_prefix = "primary"
 }
 
 module "compute_primary" {
-  source             = "./modules/compute"
+  source             = "../modules/compute"
   providers          = { aws = aws.primary }
   name_prefix        = "primary"
   vpc_id             = module.network_primary.vpc_id
@@ -17,7 +17,7 @@ module "compute_primary" {
 }
 
 module "database_primary" {
-  source             = "./modules/database"
+  source             = "../modules/database"
   providers          = { aws = aws.primary }
   name_prefix        = "primary"
   vpc_id             = module.network_primary.vpc_id
@@ -49,7 +49,7 @@ module "compute_secondary" {
 }
 
 module "database_secondary" {
-  source               = "./modules/database"
+  source               = "../modules/database"
   providers            = { aws = aws.secondary }
   name_prefix          = "secondary"
   vpc_id               = module.network_secondary.vpc_id
@@ -62,7 +62,7 @@ module "database_secondary" {
 # ---------- DNS FAILOVER ----------
 
 module "dns_failover" {
-  source                  = "./modules/dns-failover"
+  source                  = "../modules/dns-failover"
   zone_id                 = var.route53_zone_id
   record_name             = var.dns_record_name
   primary_alb_dns_name    = module.compute_primary.alb_dns_name

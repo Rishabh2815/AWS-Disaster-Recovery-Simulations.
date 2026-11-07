@@ -1,112 +1,61 @@
-# AWS Multi-Region Disaster Recovery
+# AWS Disaster Recovery Simulations
 
-A Terraform-defined warm-standby disaster recovery design across two AWS regions (us-east-1 primary, us-west-2 standby), using RDS cross-region read replicas and Route 53 failover routing. The failover behaviour was evaluated in a **local Docker and Lambda simulation**, not on AWS.
+Terraform configuration and local simulation evidence for a warm-standby disaster recovery design across `us-east-1` (primary) and `us-west-2` (standby). **The infrastructure has not been applied to AWS.** The recorded RTO/RPO values come from a single local Docker/Lambda simulation and are not AWS measurements.
 
-## Evidence
+## Repository layout
 
-- **Simulation results report (PDF):** [`docs/AWS_dr_failover_results.pdf`](docs/AWS_dr_failover_results.pdf) `<FILL: confirm path>`
-
-## Deployment status
-
-| Item | Status |
-|---|---|
-| Deployed to AWS | **No** |
-| AWS resources created | **None** |
-| `terraform apply` run | **No** |
-| `terraform validate` / `terraform plan` run | `<FILL: Yes/No>` |
-| Failover tested on real AWS infrastructure | **No** |
-
-The Terraform code is written but has never been applied to an AWS account (cost). Every result in this README comes from a local simulation. No figure here is an AWS measurement.
-
-## Architecture
-
-| Terraform module | Purpose |
-|---|---|
-| `network` | VPC and networking in both regions |
-| `compute` | Application tier in both regions (standby sized for warm standby) |
-| `database` | RDS primary plus cross-region read replica |
-| `dns-failover` | Route 53 health check and failover routing records |
-
-**Strategy:** warm standby. The standby region runs a scaled-down stack with a continuously replicated database. On failure, the replica is promoted and traffic is routed to the standby.
-
----
-
-## Failover evaluation (local Docker and Lambda simulation)
-
-> **This is a simulation.** The primary and standby "regions", the database replication, the health check, the DNS switch and the promotion were all modelled locally with Docker containers and Lambda. The timings describe the simulated failover sequence, not the speed of Route 53, RDS or any AWS service. One run (n = 1).
-
-### Which delays were measured and which were configured
-
-This matters for how the RTO should be read. Fill in each row:
-
-| Phase | Duration in run | Produced by |
-|---|---|---|
-| Health check detection | 15 s | `<FILL: emerged from interval x threshold in the simulation / configured delay>` |
-| DNS update / client cache expiry | 15 s | `<FILL: emerged from modelled TTL / configured delay>` |
-| Waiting for the promotion command | 15 s | `<FILL: manual delay / script delay>` |
-| Replica promotion | 77 s | `<FILL: real promotion time in the containers / injected delay modelled on RDS>` |
-| Standby app confirms DB connectivity | 13 s | `<FILL>` |
-
-If a phase is an injected or modelled delay, the RTO is partly an input to the simulation, not an observation. Say so in this table.
-
-### Timeline (UTC, simulated)
-
-| Event | Time | Offset from failure |
-|---|---|---|
-| Simulation started | 14:32:10 | |
-| Write load started | 14:33:45 | |
-| **Failure injected** | **14:38:20** | **0 s** |
-| Simulated health check flips unhealthy | 14:38:35 | +15 s |
-| Simulated DNS update, clients retry against standby | 14:38:50 | +30 s |
-| Replica promotion issued | 14:39:05 | +45 s |
-| Replica promotion complete | 14:40:22 | +122 s |
-| Standby app confirms DB connectivity | 14:40:35 | +135 s |
-| Teardown complete | 14:41:50 | |
-
-### RTO
-
-**Definition:** time from failure injection (`t0` = 14:38:20) to the standby application confirming database connectivity (`t1` = 14:40:35).
-
-**Result: 135 seconds in the simulation** (one run): 15 s detection + 15 s DNS + 15 s waiting for promotion + 77 s promotion + 13 s app recovery.
-
-### RPO
-
-**Definition:** the gap between failure injection and the last write present on the promoted replica, plus a check for acknowledged writes missing after promotion.
-
-**Result:** the last write on the promoted replica was at 14:38:19, 1 s before the failure, and no write was found missing (one run).
-
-This reflects the simulated replication setup and the write interval of the load generator. Real RDS cross-region read replicas replicate asynchronously, so a real RPO can be higher and depends on actual replication lag.
-
-### What this does and does not show
-
-- It shows the failover orchestration (detect, promote, redirect, verify) works end to end in the simulation.
-- It does not give AWS timings. A real failover would additionally include Route 53 health check detection (Route 53 supports 10 s or 30 s check intervals), DNS TTL and resolver caching, actual RDS replica promotion time, and real cross-region replication lag.
-- It is a single run, with a manual promotion step, a small data set and no real regional outage.
-
----
-
-## Roadmap (not implemented)
-
-- Apply the Terraform to a real account for a short, torn-down test run and measure real RTO and RPO.
-- Automate promotion (for example an EventBridge or SNS-triggered Lambda) to remove the manual delay.
-- Repeat the simulation and report min / median / max, not a single run.
-- Add fault-injection cases (network partition, instance crash, AZ outage).
-
-## Repository layout and setup
-
-`<FILL: real tree and the commands that work from a fresh clone, including how to run the Docker and Lambda simulation>`
-
-```bash
-cd <FILL: terraform directory>
-terraform init
-terraform validate
-# terraform apply is NOT run for this project; it would create billable resources in two regions
+```text
+.
+├── docs/assets/       Simulation report, architecture image, demo recording
+├── scripts/           Explicitly opt-in live AWS failover test
+├── terraform/         Root Terraform configuration
+├── web/               Static observability dashboard
+├── serve.ps1          Local dashboard server (PowerShell 7+)
+└── README.md
 ```
 
+> The root Terraform configuration references `../modules/network`, `compute`, `database`, and `dns-failover`. Those module directories are not included, so Terraform initialization/validation and deployment are currently blocked until the modules are added.
 
+## Observability dashboard
 
+The dashboard displays the documented simulation metrics, event timeline, region topology, phase breakdown, and repository evidence. It is static and deliberately labels data as simulation evidence; it does not connect to AWS or poll live resources.
 
+On Windows with PowerShell 7+, from the repository root:
 
+```powershell
+./serve.ps1
+```
 
+Open <http://localhost:4173/>. Stop with `Ctrl+C`.
 
+## Simulation evidence
 
+- RTO: 135 seconds from failure injection to standby application database confirmation (one local run).
+- RPO: last recorded replica write was one second before failure; no missing write was reported in that run.
+- The 15-second health check, DNS, and promotion-wait phases and the 77-second promotion phase are listed in the source report. Whether each duration was configured or observed is not established in the repository.
+- Real RDS replication lag, Route 53 behavior, and DNS resolver caching may differ. No AWS availability or recovery-time claim is made.
+
+Artifacts: [`docs/assets/AWS dr failover results.pdf`](docs/assets/AWS%20dr%20failover%20results.pdf), [`docs/assets/aws_dr_project_architecture.png`](docs/assets/aws_dr_project_architecture.png), and [`docs/assets/terraform_dr_live_demo.mp4`](docs/assets/terraform_dr_live_demo.mp4).
+
+## Terraform
+
+Terraform root files are under `terraform/`. Once the referenced modules exist, configure required variables (`route53_zone_id`, `dns_record_name`, and sensitive `db_password`), then run:
+
+```sh
+cd terraform
+terraform init
+terraform validate
+terraform plan
+```
+
+Do not run `terraform apply` unless you intend to create billable resources in both AWS regions and have reviewed the plan. Pass the database password as `TF_VAR_db_password`, not in a committed `.tfvars` file.
+
+## Live failover script
+
+`scripts/test_failover.sh` is a separate, opt-in AWS operation; it changes Auto Scaling capacity and needs AWS CLI credentials, `dig`, and the exact expected secondary ALB DNS name:
+
+```sh
+./scripts/test_failover.sh app.example.com primary-asg-name secondary-alb.example.com
+```
+
+Use only after deployment and review. The script restores the primary ASG on exit.
