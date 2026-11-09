@@ -18,15 +18,17 @@ Terraform configuration and local simulation evidence for a warm-standby disaste
 
 ## Observability dashboard
 
-The dashboard displays the documented simulation metrics, event timeline, region topology, phase breakdown, and repository evidence. It is static and deliberately labels data as simulation evidence; it does not connect to AWS or poll live resources.
+The dashboard displays the documented simulation metrics, event timeline, region topology, phase breakdown, and repository evidence. Replay the recorded event sequence at 1×, 4×, or 8×, pause or reset it, filter events by category, and export the event log as CSV. The playback is an interactive view of the recorded run; it does not run a new failover, connect to AWS, or poll live resources. All figures remain labeled as simulation evidence.
 
-On Windows with PowerShell 7+, from the repository root:
+To publish a public dashboard URL, open **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**. The included workflow deploys the dashboard when files under `web/` change on `main`.
+
+On Windows with PowerShell 7+, double-click `start-dashboard.cmd` to start the server and open the dashboard in your default browser. Or run this from the repository root:
 
 ```powershell
 ./serve.ps1
 ```
 
-Open <http://localhost:4173/>. Stop with `Ctrl+C`.
+Open <http://localhost:4174/>. Keep the console window open while using the dashboard; stop the server with `Ctrl+C`.
 
 ## Simulation evidence
 
